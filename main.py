@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import json
 import os
+import sys
 import math
 from dataclasses import dataclass, asdict, field
 from typing import List, Optional, Dict, Any
@@ -26,6 +27,36 @@ try:
 except ImportError:
     HAVE_PIL = False
     print("⚠️  PIL não instalada - watermark desativada")
+
+
+# ============================================================================
+# ASSET PATH HELPER (for PyInstaller --onefile compatibility)
+# ============================================================================
+
+def get_asset_path(filename: str) -> str:
+    """
+    Encontra o caminho correto para um arquivo de asset.
+    Funciona tanto para execução direta quanto para PyInstaller --onefile.
+    """
+    # Se estamos em um pacote PyInstaller --onefile
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        # Execução direta (python main.py)
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    asset_path = os.path.join(base_path, filename)
+    return asset_path
+
+
+def get_data_path(filename: str) -> str:
+    """
+    Encontra o caminho para dados persistentes (JSON).
+    Salva no diretório home do usuário para funcionar com NTFS/permissões diferentes.
+    """
+    app_data_dir = os.path.expanduser("~/.cultura_em_peso")
+    os.makedirs(app_data_dir, exist_ok=True)
+    return os.path.join(app_data_dir, filename)
 
 
 # ============================================================================
@@ -306,11 +337,12 @@ class CulturaEmPesoBattle:
     
     def _setup_logo(self, parent):
         """Setup logo como watermark"""
-        if not HAVE_PIL or not os.path.exists("logo.png"):
+        logo_path = get_asset_path("logo.png")
+        if not HAVE_PIL or not os.path.exists(logo_path):
             return
         
         try:
-            img = Image.open("logo.png")
+            img = Image.open(logo_path)
             # Resize
             img.thumbnail((200, 200), Image.Resampling.LANCZOS)
             # Add alpha
@@ -551,26 +583,36 @@ class CulturaEmPesoBattle:
     
     def save_tournament(self):
         """Salva torneio em JSON"""
-        data = {
-            "left_participants": self.tournament.left_participants,
-            "right_participants": self.tournament.right_participants,
-            "champion_left": self.tournament.champion_left,
-            "champion_right": self.tournament.champion_right,
-            "final_winner": self.tournament.final_winner,
-            "left_bracket": self._bracket_to_dict(self.tournament.left_bracket),
-            "right_bracket": self._bracket_to_dict(self.tournament.right_bracket),
-        }
-        
-        with open("tournament_data.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        try:
+            data = {
+                "left_participants": self.tournament.left_participants,
+                "right_participants": self.tournament.right_participants,
+                "champion_left": self.tournament.champion_left,
+                "champion_right": self.tournament.champion_right,
+                "final_winner": self.tournament.final_winner,
+                "left_bracket": self._bracket_to_dict(self.tournament.left_bracket),
+                "right_bracket": self._bracket_to_dict(self.tournament.right_bracket),
+            }
+            
+            data_path = get_data_path("tournament_data.json")
+            with open(data_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            print(f"✅ Torneio salvo em: {data_path}")
+        except (IOError, OSError) as e:
+            print(f"❌ Erro ao salvar: {e}")
+            messagebox.showerror("Erro ao Salvar", f"Não consegui salvar o torneio. Verifique permissões:\n{e}")
+        except Exception as e:
+            print(f"❌ Erro inesperado ao salvar: {e}")
+            messagebox.showerror("Erro", f"Erro ao salvar torneio: {e}")
     
     def load_tournament(self):
         """Carrega torneio do JSON"""
-        if not os.path.exists("tournament_data.json"):
+        data_path = get_data_path("tournament_data.json")
+        if not os.path.exists(data_path):
             return
         
         try:
-            with open("tournament_data.json", "r", encoding="utf-8") as f:
+            with open(data_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             
             self.tournament.left_participants = data.get("left_participants", [])
@@ -583,8 +625,15 @@ class CulturaEmPesoBattle:
             
             if data.get("left_bracket"):
                 self._display_bracket()
+        except json.JSONDecodeError as e:
+            print(f"❌ Erro ao parsear JSON: {e}")
+            messagebox.showerror("Erro", f"Arquivo de torneio corrompido: {e}")
+        except (IOError, OSError) as e:
+            print(f"❌ Erro ao ler arquivo: {e}")
+            messagebox.showerror("Erro", f"Não consegui ler arquivo de torneio. Verifique permissões: {e}")
         except Exception as e:
-            print(f"Error loading: {e}")
+            print(f"❌ Erro ao carregar: {e}")
+            messagebox.showerror("Erro", f"Erro inesperado ao carregar torneio: {e}")
     
     def _bracket_to_dict(self, bracket: Dict) -> Dict:
         """Converte bracket para dict"""

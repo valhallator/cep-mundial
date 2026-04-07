@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cultura em Peso Battle
+Comment=Gerador de Chaveamento de Torneios
+Exec=AppRun
+Icon=dialog-information
+Terminal=false
+Categories=Utility;
